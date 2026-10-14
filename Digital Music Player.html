@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AuraSound - Digital Music Player Queue Manager</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#f5f3ff',
+                            100: '#ede9fe',
+                            500: '#8b5cf6',
+                            600: '#7c3aed',
+                            700: '#6d28d9',
+                            900: '#4c1d95',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            user-select: none;
+        }
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.03);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(139, 92, 246, 0.3);
+            border-radius: 9999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(139, 92, 246, 0.6);
+        }
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 0 15px rgba(139, 92, 246, 0.3); }
+            50% { box-shadow: 0 0 30px rgba(139, 92, 246, 0.6); }
+        }
+        .album-art-glow {
+            animation: pulse-glow 4s infinite ease-in-out;
+        }
+        .equalizer-bar {
+            transition: height 0.15s ease;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col justify-between antialiased selection:bg-brand-500 selection:text-white">
+
+    <header class="border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-md sticky top-0 z-50 px-4 lg:px-8 py-3.5 flex items-center justify-between">
+        <div class="flex items-center space-x-3">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-indigo-400 flex items-center justify-center shadow-lg shadow-brand-500/30">
+                <i class="fa-solid fa-wave-square text-white text-lg"></i>
+            </div>
+            <div>
+                <h1 class="font-bold text-lg tracking-tight bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">AuraSound</h1>
+                <p class="text-xs text-slate-400 font-medium">Advanced Array Queue Player</p>
+            </div>
+        </div>
+
+        <div class="flex items-center space-x-3">
+            <button onclick="openModal('addTrackModal')" class="px-3.5 py-2 text-xs font-semibold bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/60 rounded-lg transition flex items-center space-x-2 shadow-sm">
+                <i class="fa-solid fa-plus text-brand-400"></i>
+                <span class="hidden sm:inline">Add Track</span>
+            </button>
+            <button onclick="openModal('queueDebuggerModal')" class="px-3.5 py-2 text-xs font-semibold bg-brand-600 hover:bg-brand-500 text-white rounded-lg transition flex items-center space-x-2 shadow-lg shadow-brand-600/20">
+                <i class="fa-solid fa-code text-white/80"></i>
+                <span>Queue Logic Inspector</span>
+            </button>
+        </div>
+    </header>
+
+    <main class="flex-1 max-w-7xl w-full mx-auto p-4 lg:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        
+        <!-- Left & Center: Player Dashboard & Playlist (8 Cols) -->
+        <div class="lg:col-span-8 flex flex-col space-y-6">
+            
+            <!-- Currently Playing Hero Card -->
+            <div class="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900/90 to-brand-950/40 border border-slate-800/80 p-6 lg:p-8 shadow-2xl">
+                <!-- Ambient glow backgrounds -->
+                <div class="absolute -right-16 -top-16 w-64 h-64 bg-brand-600/15 rounded-full blur-3xl pointer-events-none"></div>
+                <div class="absolute -left-16 -bottom-16 w-64 h-64 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none"></div>
+
+                <div class="relative z-10 flex flex-col md:flex-row items-center gap-6">
+                    <!-- Album Art -->
+                    <div class="relative group flex-shrink-0">
+                        <div id="currentArtContainer" class="w-44 h-44 md:w-52 md:h-52 rounded-2xl overflow-hidden shadow-2xl album-art-glow border border-slate-700/50 bg-slate-800">
+                            <img id="currentArt" src="https://placehold.co/400x400/1e293b/a78bfa?text=Aura" alt="Album Art" class="w-full h-full object-cover transition duration-500 group-hover:scale-105">
+                        </div>
+                        <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition rounded-2xl flex items-center justify-center backdrop-blur-xs">
+                            <button onclick="togglePlay()" class="w-14 h-14 rounded-full bg-brand-600 text-white flex items-center justify-center shadow-xl transform hover:scale-110 transition">
+                                <i id="overlayPlayIcon" class="fa-solid fa-play text-xl ml-0.5"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Track Metadata & Wave Visualizer -->
+                    <div class="flex-1 text-center md:text-left flex flex-col justify-between h-full w-full">
+                        <div>
+                            <div class="flex items-center justify-center md:justify-between mb-2">
+                                <span id="currentGenreBadge" class="px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider bg-brand-500/10 text-brand-400 rounded-full border border-brand-500/20">Synthwave</span>
+                                <span class="text-xs text-slate-400 font-mono flex items-center space-x-1">
+                                    <i class="fa-solid fa-layer-group text-slate-500"></i>
+                                    <span>Pointer Index: <strong id="currentIndexDisplay" class="text-brand-400 font-mono">0</strong></span>
+                                </span>
+                            </div>
+                            <h2 id="currentTitle" class="text-2xl md:text-3xl font-bold text-white tracking-tight truncate mb-1">Select a Track</h2>
+                            <p id="currentArtist" class="text-sm md:text-base text-slate-400 font-medium mb-4">No track loaded in queue</p>
+                        </div>
+
+                        <!-- Simulated Audio Visualizer Wave -->
+                        <div class="flex items-end justify-center md:justify-start space-x-1 h-10 mb-2 px-1 py-1 bg-slate-950/40 rounded-xl border border-slate-800/60">
+                            <div class="w-1.5 bg-brand-500 rounded-full equalizer-bar h-3" style="animation: bounce 1.2s infinite ease-in-out;"></div>
+                            <div class="w-1.5 bg-brand-500 rounded-full equalizer-bar h-7" style="animation: bounce 0.8s infinite ease-in-out; animation-delay: 0.2s;"></div>
+                            <div class="w-1.5 bg-brand-500 rounded-full equalizer-bar h-4" style="animation: bounce 1.0s infinite ease-in-out; animation-delay: 0.4s;"></div>
+                            <div class="w-1.5 bg-brand-500 rounded-full equalizer-bar h-9" style="animation: bounce 0.6s infinite ease-in-out; animation-delay: 0.1s;"></div>
+                            <div class="w-1.5 bg-brand-500 rounded-full equalizer-bar h-5" style="animation: bounce 1.1s infinite ease-in-out; animation-delay: 0.3s;"></div>
+                            <div class="w-1.5 bg-brand-500 rounded-full equalizer-bar h-8" style="animation: bounce 0.7s infinite ease-in-out; animation-delay: 0.5s;"></div>
+                            <div class="w-1.5 bg-brand-500 rounded-full equalizer-bar h-2" style="animation: bounce 1.3s infinite ease-in-out; animation-delay: 0.2s;"></div>
+                            <div class="w-1.5 bg-brand-500 rounded-full equalizer-bar h-6" style="animation: bounce 0.9s infinite ease-in-out; animation-delay: 0.4s;"></div>
+                            <div class="w-1.5 bg-brand-500 rounded-full equalizer-bar h-7" style="animation: bounce 0.7s infinite ease-in-out; animation-delay: 0.1s;"></div>
+                            <div class="w-1.5 bg-brand-500 rounded-full equalizer-bar h-4" style="animation: bounce 1.0s infinite ease-in-out; animation-delay: 0.3s;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Progress Bar -->
+                <div class="mt-6 space-y-1.5">
+                    <div class="flex justify-between text-xs font-medium text-slate-400">
+                        <span id="currentTimeLabel">0:00</span>
+                        <span id="totalDurationLabel">0:00</span>
+                    </div>
+                    <div onclick="seekTrack(event)" class="w-full h-2 bg-slate-800 rounded-full cursor-pointer relative group overflow-hidden">
+                        <div id="progressBar" class="absolute top-0 left-0 h-full bg-gradient-to-r from-brand-600 to-indigo-400 w-0 rounded-full transition-all duration-100"></div>
+                    </div>
+                </div>
+
+                <!-- Main Player Controls -->
+                <div class="mt-6 flex flex-wrap items-center justify-between gap-4 pt-4 border-t border-slate-800/80">
+                    <div class="flex items-center space-x-2">
+                        <button id="shuffleBtn" onclick="toggleShuffle()" title="Fisher-Yates Shuffle" class="p-2.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/80 transition relative">
+                            <i class="fa-solid fa-shuffle text-sm"></i>
+                            <span id="shuffleIndicator" class="absolute top-1 right-1 w-1.5 h-1.5 bg-brand-500 rounded-full hidden"></span>
+                        </button>
+                        <button id="repeatBtn" onclick="toggleRepeat()" title="Repeat Mode" class="p-2.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/80 transition">
+                            <i class="fa-solid fa-repeat text-sm"></i>
+                        </button>
+                    </div>
+
+                    <div class="flex items-center space-x-4">
+                        <button onclick="prevTrack()" title="Previous Track" class="p-3 rounded-full text-slate-300 hover:text-white hover:bg-slate-800/80 transition transform active:scale-95">
+                            <i class="fa-solid fa-backward-step text-lg"></i>
+                        </button>
+                        <button onclick="togglePlay()" id="mainPlayBtn" class="w-14 h-14 rounded-2xl bg-gradient-to-tr from-brand-600 to-indigo-500 text-white flex items-center justify-center shadow-lg shadow-brand-600/30 hover:shadow-brand-600/50 transform hover:scale-105 active:scale-95 transition">
+                            <i id="mainPlayIcon" class="fa-solid fa-play text-xl ml-0.5"></i>
+                        </button>
+                        <button onclick="nextTrack()" title="Next Track" class="p-3 rounded-full text-slate-300 hover:text-white hover:bg-slate-800/80 transition transform active:scale-95">
+                            <i class="fa-solid fa-forward-step text-lg"></i>
+                        </button>
+                    </div>
+
+                    <div class="flex items-center space-x-3 w-full sm:w-auto justify-end">
+                        <button onclick="toggleMute()" class="text-slate-400 hover:text-white transition">
+                            <i id="volumeIcon" class="fa-solid fa-volume-high text-sm"></i>
+                        </button>
+                        <input type="range" id="volumeSlider" min="0" max="100" value="80" oninput="updateVolume(this.value)" class="w-24 accent-brand-500 bg-slate-800 h-1.5 rounded-lg cursor-pointer">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Master Library / Playlist Section -->
+            <div class="bg-slate-900/80 border border-slate-800/80 rounded-3xl p-6 shadow-xl">
+                <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+                    <div>
+                        <h3 class="text-lg font-bold text-white flex items-center space-x-2">
+                            <i class="fa-solid fa-compact-disc text-brand-400"></i>
+                            <span>Master Music Library</span>
+                        </h3>
+                        <p class="text-xs text-slate-400">Click any track to queue and play immediately</p>
+                    </div>
+                    <div class="flex items-center space-x-2 w-full sm:w-auto">
+                        <div class="relative flex-1 sm:w-60">
+                            <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-3 text-xs text-slate-500"></i>
+                            <input type="text" id="librarySearch" oninput="filterLibrary(this.value)" placeholder="Search library..." class="w-full bg-slate-950/60 border border-slate-800 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-brand-500 transition">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="border-b border-slate-800/80 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                                <th class="py-3 px-4 w-12">#</th>
+                                <th class="py-3 px-4">Title & Artist</th>
+                                <th class="py-3 px-4 hidden md:table-cell">Genre</th>
+                                <th class="py-3 px-4 text-right">Duration</th>
+                                <th class="py-3 px-4 text-center">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="libraryTableBody" class="divide-y divide-slate-800/40 text-xs font-medium text-slate-300">
+                            <!-- Populated dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Right Column: Queue Manager & Array Inspector (4 Cols) -->
+        <div class="lg:col-span-4 flex flex-col space-y-6">
+            
+            <!-- Playback Queue Card -->
+            <div class="bg-slate-900/80 border border-slate-800/80 rounded-3xl p-6 shadow-xl flex flex-col h-[520px]">
+                <div class="flex items-center justify-between mb-4 pb-3 border-b border-slate-800/80">
+                    <div class="flex items-center space-x-2">
+                        <div class="w-7 h-7 rounded-lg bg-brand-500/10 text-brand-400 flex items-center justify-center font-bold text-xs border border-brand-500/20" id="queueCountBadge">0</div>
+                        <div>
+                            <h3 class="text-sm font-bold text-white">Playback Queue</h3>
+                            <p class="text-[11px] text-slate-400">Managed via shift(), unshift(), push()</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-1">
+                        <button onclick="applyFisherYatesShuffle()" title="Shuffle Queue (Fisher-Yates)" class="p-2 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition flex items-center space-x-1 px-2.5">
+                            <i class="fa-solid fa-shuffle text-brand-400"></i>
+                            <span>Shuffle</span>
+                        </button>
+                        <button onclick="clearQueue()" title="Clear Queue" class="p-2 text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg transition">
+                            <i class="fa-solid fa-trash-can"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Queue List -->
+                <div id="queueListContainer" class="flex-1 overflow-y-auto space-y-2 pr-1">
+                    <!-- Populated dynamically -->
+                </div>
+
+                <!-- Queue footer hint -->
+                <div class="mt-4 pt-3 border-t border-slate-800/80 text-[11px] text-slate-500 flex justify-between items-center">
+                    <span>Use arrows to reorder (splice)</span>
+                    <span id="queueLengthText">0 items</span>
+                </div>
+            </div>
+
+            <!-- Array Logic Quick Stats -->
+            <div class="bg-gradient-to-br from-slate-900 via-slate-900/90 to-slate-950 border border-slate-800/80 rounded-3xl p-6 shadow-xl">
+                <h4 class="text-xs font-bold uppercase tracking-wider text-brand-400 mb-3 flex items-center space-x-2">
+                    <i class="fa-solid fa-microchip"></i>
+                    <span>Array State & Methods</span>
+                </h4>
+                <div class="space-y-2.5 text-xs font-mono text-slate-300">
+                    <div class="flex justify-between bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/60">
+                        <span class="text-slate-400">Queue Length:</span>
+                        <span id="statQueueLen" class="text-brand-400 font-bold">0</span>
+                    </div>
+                    <div class="flex justify-between bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/60">
+                        <span class="text-slate-400">Pointer (Index):</span>
+                        <span id="statPointer" class="text-indigo-400 font-bold">0</span>
+                    </div>
+                    <div class="flex justify-between bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/60">
+                        <span class="text-slate-400">Last Action:</span>
+                        <span id="statLastAction" class="text-emerald-400 font-bold truncate max-w-[140px]">Initialized</span>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+    </main>
+
+    <!-- Queue Debugger Modal -->
+    <div id="queueDebuggerModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-2xl w-full p-6 shadow-2xl space-y-4">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+                <h3 class="text-lg font-bold text-white flex items-center space-x-2">
+                    <i class="fa-solid fa-code text-brand-400"></i>
+                    <span>Queue Array State & Logic Inspector</span>
+                </h3>
+                <button onclick="closeModal('queueDebuggerModal')" class="text-slate-400 hover:text-white">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            <p class="text-xs text-slate-400">
+                This inspector displays the exact JavaScript array structures driving the music player queue and active track pointer in real-time.
+            </p>
+            <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 font-mono text-xs text-emerald-400 overflow-x-auto max-h-64">
+                <pre id="jsonQueueOutput">[]</pre>
+            </div>
+            <div class="flex justify-end pt-2">
+                <button onclick="closeModal('queueDebuggerModal')" class="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-xl text-xs font-semibold transition">
+                    Close Inspector
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Track Modal -->
+    <div id="addTrackModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+                <h3 class="text-lg font-bold text-white flex items-center space-x-2">
+                    <i class="fa-solid fa-circle-plus text-brand-400"></i>
+                    <span>Add New Track to Library</span>
+                </h3>
+                <button onclick="closeModal('addTrackModal')" class="text-slate-400 hover:text-white">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            <form id="addTrackForm" onsubmit="handleAddNewTrack(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">Track Title</label>
+                    <input type="text" id="newTitle" required placeholder="e.g. Neon Horizon" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">Artist Name</label>
+                    <input type="text" id="newArtist" required placeholder="e.g. CyberPulse" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 mb-1">Genre</label>
+                        <input type="text" id="newGenre" required placeholder="Synthwave" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 mb-1">Duration (Seconds)</label>
+                        <input type="number" id="newDuration" required min="30" max="600" value="210" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">Album Art Keyword / Theme</label>
+                    <input type="text" id="newArtKeyword" placeholder="cyberpunk, sunset, abstract" value="synthwave" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+                </div>
+                <div class="flex justify-end space-x-3 pt-2">
+                    <button type="button" onclick="closeModal('addTrackModal')" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition">Cancel</button>
+                    <button type="submit" class="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-xl text-xs font-semibold transition shadow-lg shadow-brand-600/20">Add Track</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Toast Notification Message Box -->
+    <div id="toastNotification" class="fixed bottom-6 right-6 z-50 transform translate-y-20 opacity-0 transition-all duration-300 pointer-events-none">
+        <div class="bg-slate-900 border border-slate-700 text-slate-100 px-4 py-3 rounded-2xl shadow-2xl flex items-center space-x-3">
+            <div id="toastIcon" class="w-8 h-8 rounded-xl bg-brand-500/20 text-brand-400 flex items-center justify-center">
+                <i class="fa-solid fa-bell"></i>
+            </div>
+            <div>
+                <h5 id="toastTitle" class="text-xs font-bold text-white">Notification</h5>
+                <p id="toastMessage" class="text-[11px] text-slate-400">Action completed successfully.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let musicLibrary = [
+            { id: 1, title: "Neon Horizon", artist: "CyberPulse", genre: "Synthwave", duration: 214, artKeyword: "cyberpunk" },
+            { id: 2, title: "Midnight Drive", artist: "Kavinsky Vibes", genre: "Retrowave", duration: 198, artKeyword: "sunset" },
+            { id: 3, title: "Binary Sunset", artist: "Solaris", genre: "Ambient", duration: 245, artKeyword: "space" },
+            { id: 4, title: "Starlight Runner", artist: "Astra", genre: "Synthwave", duration: 182, artKeyword: "neon" },
+            { id: 5, title: "Electric Ocean", artist: "Deep Dive", genre: "Chillwave", duration: 230, artKeyword: "ocean" },
+            { id: 6, title: "Quantum Echo", artist: "Data Grid", genre: "Cyberpunk", duration: 205, artKeyword: "matrix" },
+            { id: 7, title: "Velvet Night", artist: "Luna Park", genre: "Lo-Fi", duration: 175, artKeyword: "night" }
+        ];
+
+        let playbackQueue = [];
+        let currentIndex = 0;
+        let isPlaying = false;
+        let currentTime = 0;
+        let volume = 80;
+        let isMuted = false;
+        let isShuffleActive = false;
+        let repeatMode = 0; // 0: Off, 1: Repeat All, 2: Repeat One
+        let lastActionLog = "Initialized Player";
+
+        window.onload = function() {
+            playbackQueue = [...musicLibrary];
+            renderLibrary();
+            renderQueue();
+            updateStats();
+            if (playbackQueue.length > 0) {
+                loadTrack(0, false);
+            }
+            startPlaybackLoop();
+        };
+
+        function renderLibrary(filteredTracks = musicLibrary) {
+            const tbody = document.getElementById('libraryTableBody');
+            tbody.innerHTML = '';
+
+            if (filteredTracks.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="py-6 text-center text-slate-500">No tracks found matching query.</td></tr>`;
+                return;
+            }
+
+            filteredTracks.forEach((track, index) => {
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-800/40 transition group cursor-pointer";
+                tr.onclick = () => playTrackDirectly(track.id);
+                
+                tr.innerHTML = `
+                    <td class="py-3 px-4 font-mono text-slate-500 group-hover:text-brand-400">${index + 1}</td>
+                    <td class="py-3 px-4">
+                        <div class="flex items-center space-x-3">
+                            <img src="https://placehold.co/40x40/1e293b/a78bfa?text=${track.title.charAt(0)}" class="w-8 h-8 rounded-lg object-cover" alt="Art">
+                            <div>
+                                <div class="font-bold text-white group-hover:text-brand-300 transition">${track.title}</div>
+                                <div class="text-slate-400 text-[11px]">${track.artist}</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="py-3 px-4 hidden md:table-cell">
+                        <span class="px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 text-[10px] font-semibold">${track.genre}</span>
+                    </td>
+                    <td class="py-3 px-4 text-right font-mono text-slate-400">${formatTime(track.duration)}</td>
+                    <td class="py-3 px-4 text-center" onclick="event.stopPropagation()">
+                        <div class="flex items-center justify-center space-x-2">
+                            <button onclick="queuePushTrack(${track.id})" title="Push to end of queue (.push())" class="p-1.5 rounded-lg bg-slate-800 hover:bg-brand-600/30 text-slate-300 hover:text-brand-300 transition">
+                                <i class="fa-solid fa-circle-plus text-xs"></i>
+                            </button>
+                            <button onclick="queueUnshiftTrack(${track.id})" title="Play next in queue (.unshift())" class="p-1.5 rounded-lg bg-slate-800 hover:bg-brand-600/30 text-slate-300 hover:text-brand-300 transition">
+                                <i class="fa-solid fa-bolt text-xs"></i>
+                            </button>
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function renderQueue() {
+            const container = document.getElementById('queueListContainer');
+            container.innerHTML = '';
+
+            document.getElementById('queueCountBadge').textContent = playbackQueue.length;
+            document.getElementById('queueLengthText').textContent = `${playbackQueue.length} items`;
+            document.getElementById('statQueueLen').textContent = playbackQueue.length;
+
+            if (playbackQueue.length === 0) {
+                container.innerHTML = `
+                    <div class="flex flex-col items-center justify-center h-48 text-center text-slate-500 space-y-2">
+                        <i class="fa-solid fa-list-ul text-2xl"></i>
+                        <p class="text-xs">Queue is empty. Add songs from library.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            playbackQueue.forEach((track, index) => {
+                const isCurrent = index === currentIndex;
+                const div = document.createElement('div');
+                div.className = `flex items-center justify-between p-2.5 rounded-2xl border transition ${
+                    isCurrent 
+                        ? 'bg-brand-600/15 border-brand-500/40 shadow-sm' 
+                        : 'bg-slate-950/40 border-slate-800/60 hover:bg-slate-800/40'
+                }`;
+
+                div.innerHTML = `
+                    <div class="flex items-center space-x-3 overflow-hidden cursor-pointer flex-1" onclick="loadTrack(${index}, true)">
+                        <div class="w-6 h-6 rounded-lg flex items-center justify-center font-mono text-[11px] ${isCurrent ? 'bg-brand-600 text-white font-bold' : 'text-slate-500 bg-slate-900'}">
+                            ${isCurrent ? '<i class="fa-solid fa-volume-high text-[10px]"></i>' : index + 1}
+                        </div>
+                        <div class="truncate">
+                            <h5 class="text-xs font-bold truncate ${isCurrent ? 'text-brand-300 font-extrabold' : 'text-slate-200'}">${track.title}</h5>
+                            <p class="text-[10px] text-slate-400 truncate">${track.artist}</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-1 pl-2">
+                        <button onclick="moveQueueItem(${index}, -1)" title="Move Up" class="p-1.5 text-slate-500 hover:text-white rounded-lg transition ${index === 0 ? 'opacity-30 pointer-events-none' : ''}">
+                            <i class="fa-solid fa-chevron-up text-[10px]"></i>
+                        </button>
+                        <button onclick="moveQueueItem(${index}, 1)" title="Move Down" class="p-1.5 text-slate-500 hover:text-white rounded-lg transition ${index === playbackQueue.length - 1 ? 'opacity-30 pointer-events-none' : ''}">
+                            <i class="fa-solid fa-chevron-down text-[10px]"></i>
+                        </button>
+                        <button onclick="removeQueueItem(${index})" title="Remove using splice()" class="p-1.5 text-red-400/80 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition">
+                            <i class="fa-solid fa-trash-can text-[10px]"></i>
+                        </button>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+
+            document.getElementById('jsonQueueOutput').textContent = JSON.stringify(playbackQueue.map((t, i) => ({ index: i, title: t.title, artist: t.artist })), null, 2);
+        }
+
+        function queuePushTrack(trackId) {
+            const track = musicLibrary.find(t => t.id === trackId);
+            if (!track) return;
+            playbackQueue.push({ ...track, queueId: Math.random() });
+            lastActionLog = `queue.push("${track.title}")`;
+            showToast("Added to Queue", `Pushed "${track.title}" to the end of the queue.`, "fa-circle-plus");
+            renderQueue();
+            updateStats();
+        }
+
+        function queueUnshiftTrack(trackId) {
+            const track = musicLibrary.find(t => t.id === trackId);
+            if (!track) return;
+            const insertIdx = playbackQueue.length === 0 ? 0 : currentIndex + 1;
+            playbackQueue.splice(insertIdx, 0, { ...track, queueId: Math.random() });
+            lastActionLog = `queue.splice(${insertIdx}, 0, "${track.title}")`;
+            showToast("Playing Next", `Unshifted "${track.title}" to play next.`, "fa-bolt");
+            renderQueue();
+            updateStats();
+        }
+
+        function removeQueueItem(index) {
+            if (playbackQueue.length === 0) return;
+            const removed = playbackQueue.splice(index, 1)[0];
+            lastActionLog = `queue.splice(${index}, 1)`;
+            
+            if (index < currentIndex) {
+                currentIndex = Math.max(0, currentIndex - 1);
+            } else if (index === currentIndex) {
+                if (playbackQueue.length > 0) {
+                    currentIndex = Math.min(currentIndex, playbackQueue.length - 1);
+                    loadTrack(currentIndex, false);
+                } else {
+                    stopPlayer();
+                }
+            }
+            
+            showToast("Track Removed", `Removed "${removed.title}" using splice().`, "fa-trash-can");
+            renderQueue();
+            updateStats();
+        }
+
+        function moveQueueItem(index, direction) {
+            const newIndex = index + direction;
+            if (newIndex < 0 || newIndex >= playbackQueue.length) return;
+            
+            const [movedItem] = playbackQueue.splice(index, 1);
+            playbackQueue.splice(newIndex, 0, movedItem);
+
+            if (currentIndex === index) {
+                currentIndex = newIndex;
+            } else if (currentIndex === newIndex) {
+                currentIndex = index;
+            }
+
+            lastActionLog = `queue reordered (splice)`;
+            renderQueue();
+            updateStats();
+        }
+
+        function applyFisherYatesShuffle() {
+            if (playbackQueue.length <= 1) {
+                showToast("Notice", "Need at least 2 tracks in queue to shuffle.", "fa-shuffle");
+                return;
+            }
+
+            const activeTrack = playbackQueue[currentIndex];
+
+            for (let i = playbackQueue.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [playbackQueue[i], playbackQueue[j]] = [playbackQueue[j], playbackQueue[i]];
+            }
+
+            if (activeTrack) {
+                currentIndex = playbackQueue.findIndex(t => t === activeTrack || t.id === activeTrack.id);
+                if (currentIndex === -1) currentIndex = 0;
+            }
+
+            lastActionLog = `Fisher-Yates Shuffle Executed`;
+            showToast("Queue Shuffled", "Successfully randomized queue without bias.", "fa-shuffle");
+            renderQueue();
+            updateStats();
+        }
+
+        function clearQueue() {
+            playbackQueue = [];
+            currentIndex = 0;
+            stopPlayer();
+            lastActionLog = `queue cleared`;
+            renderQueue();
+            updateStats();
+            showToast("Queue Cleared", "All tracks removed from playback queue.", "fa-trash-can");
+        }
+
+        function loadTrack(index, playImmediately = true) {
+            if (playbackQueue.length === 0 || index < 0 || index >= playbackQueue.length) return;
+            
+            currentIndex = index;
+            const track = playbackQueue[currentIndex];
+            
+            document.getElementById('currentTitle').textContent = track.title;
+            document.getElementById('currentArtist').textContent = track.artist;
+            document.getElementById('currentGenreBadge').textContent = track.genre;
+            document.getElementById('currentIndexDisplay').textContent = currentIndex;
+            document.getElementById('statPointer').textContent = currentIndex;
+            document.getElementById('totalDurationLabel').textContent = formatTime(track.duration);
+            document.getElementById('currentArt').src = `https://placehold.co/400x400/1e293b/a78bfa?text=${encodeURIComponent(track.title)}`;
+
+            currentTime = 0;
+            updateProgressBar();
+
+            if (playImmediately) {
+                isPlaying = true;
+                updatePlayButtons();
+            }
+
+            renderQueue();
+            lastActionLog = `loaded track [${currentIndex}] "${track.title}"`;
+            updateStats();
+        }
+
+        function playTrackDirectly(trackId) {
+            const track = musicLibrary.find(t => t.id === trackId);
+            if (!track) return;
+            
+            playbackQueue.push({ ...track, queueId: Math.random() });
+            loadTrack(playbackQueue.length - 1, true);
+            lastActionLog = `library play "${track.title}" (.push())`;
+            renderQueue();
+            updateStats();
+        }
+
+        function nextTrack() {
+            if (playbackQueue.length === 0) return;
+
+            if (currentIndex < playbackQueue.length - 1) {
+                currentIndex++;
+                loadTrack(currentIndex, true);
+                lastActionLog = `next track (pointer -> ${currentIndex})`;
+            } else {
+                if (repeatMode === 1) {
+                    currentIndex = 0;
+                    loadTrack(currentIndex, true);
+                    lastActionLog = `repeat all (loop to index 0)`;
+                } else {
+                    isPlaying = false;
+                    updatePlayButtons();
+                    showToast("Queue Ended", "Reached the end of the playback queue.", "fa-flag-checkered");
+                }
+            }
+            updateStats();
+        }
+
+        function prevTrack() {
+            if (playbackQueue.length === 0) return;
+
+            if (currentTime > 3 || currentIndex === 0) {
+                currentTime = 0;
+                updateProgressBar();
+            } else {
+                currentIndex = Math.max(0, currentIndex - 1);
+                loadTrack(currentIndex, true);
+                lastActionLog = `prev track (pointer -> ${currentIndex})`;
+            }
+            updateStats();
+        }
+
+        function togglePlay() {
+            if (playbackQueue.length === 0) {
+                if (musicLibrary.length > 0) {
+                    queuePushTrack(musicLibrary[0].id);
+                    loadTrack(0, true);
+                }
+                return;
+            }
+
+            isPlaying = !isPlaying;
+            updatePlayButtons();
+            lastActionLog = isPlaying ? "playing" : "paused";
+            updateStats();
+        }
+
+        function stopPlayer() {
+            isPlaying = false;
+            currentTime = 0;
+            document.getElementById('currentTitle').textContent = "Select a Track";
+            document.getElementById('currentArtist').textContent = "No track loaded in queue";
+            document.getElementById('currentGenreBadge').textContent = "Synthwave";
+            document.getElementById('currentIndexDisplay').textContent = "0";
+            document.getElementById('totalDurationLabel').textContent = "0:00";
+            document.getElementById('currentTimeLabel').textContent = "0:00";
+            document.getElementById('progressBar').style.width = "0%";
+            updatePlayButtons();
+        }
+
+        function updatePlayButtons() {
+            const iconMain = document.getElementById('mainPlayIcon');
+            const iconOverlay = document.getElementById('overlayPlayIcon');
+            
+            if (isPlaying) {
+                iconMain.className = "fa-solid fa-pause text-xl";
+                iconOverlay.className = "fa-solid fa-pause text-xl";
+            } else {
+                iconMain.className = "fa-solid fa-play text-xl ml-0.5";
+                iconOverlay.className = "fa-solid fa-play text-xl ml-0.5";
+            }
+        }
+
+        function startPlaybackLoop() {
+            setInterval(() => {
+                if (isPlaying && playbackQueue.length > 0) {
+                    const currentTrack = playbackQueue[currentIndex];
+                    if (currentTrack) {
+                        currentTime++;
+                        if (currentTime >= currentTrack.duration) {
+                            if (repeatMode === 2) {
+                                currentTime = 0;
+                            } else {
+                                nextTrack();
+                            }
+                        }
+                        updateProgressBar();
+                    }
+                }
+            }, 1000);
+        }
+
+        function updateProgressBar() {
+            const currentTrack = playbackQueue[currentIndex];
+            if (!currentTrack) return;
+            
+            const pct = (currentTime / currentTrack.duration) * 100;
+            document.getElementById('progressBar').style.width = `${Math.min(100, pct)}%`;
+            document.getElementById('currentTimeLabel').textContent = formatTime(currentTime);
+        }
+
+        function seekTrack(event) {
+            const currentTrack = playbackQueue[currentIndex];
+            if (!currentTrack) return;
+
+            const rect = event.currentTarget.getBoundingClientRect();
+            const clickX = event.clientX - rect.left;
+            const width = rect.width;
+            const percentage = clickX / width;
+            
+            currentTime = Math.floor(currentTrack.duration * percentage);
+            updateProgressBar();
+        }
+
+        function toggleShuffle() {
+            isShuffleActive = !isShuffleActive;
+            const btn = document.getElementById('shuffleBtn');
+            const indicator = document.getElementById('shuffleIndicator');
+            
+            if (isShuffleActive) {
+                btn.classList.add('text-brand-400', 'bg-slate-800');
+                indicator.classList.remove('hidden');
+                applyFisherYatesShuffle();
+            } else {
+                btn.classList.remove('text-brand-400', 'bg-slate-800');
+                indicator.classList.add('hidden');
+                showToast("Shuffle Off", "Sequential playback restored.", "fa-shuffle");
+            }
+        }
+
+        function toggleRepeat() {
+            repeatMode = (repeatMode + 1) % 3;
+            const btn = document.getElementById('repeatBtn');
+            
+            if (repeatMode === 0) {
+                btn.className = "p-2.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/80 transition";
+                showToast("Repeat Off", "Queue will stop at the end.", "fa-repeat");
+            } else if (repeatMode === 1) {
+                btn.className = "p-2.5 rounded-xl text-brand-400 bg-slate-800 transition";
+                showToast("Repeat All", "Queue will loop continuously.", "fa-repeat");
+            } else if (repeatMode === 2) {
+                btn.className = "p-2.5 rounded-xl text-indigo-400 bg-slate-800 transition";
+                showToast("Repeat One", "Current track will repeat.", "fa-1");
+            }
+        }
+
+        function updateVolume(val) {
+            volume = val;
+            isMuted = volume == 0;
+            updateVolumeIcon();
+        }
+
+        function toggleMute() {
+            isMuted = !isMuted;
+            const slider = document.getElementById('volumeSlider');
+            if (isMuted) {
+                slider.value = 0;
+            } else {
+                slider.value = volume || 80;
+            }
+            updateVolumeIcon();
+        }
+
+        function updateVolumeIcon() {
+            const icon = document.getElementById('volumeIcon');
+            if (isMuted || volume == 0) {
+                icon.className = "fa-solid fa-volume-xmark text-sm text-red-400";
+            } else if (volume < 50) {
+                icon.className = "fa-solid fa-volume-low text-sm";
+            } else {
+                icon.className = "fa-solid fa-volume-high text-sm";
+            }
+        }
+
+        function filterLibrary(query) {
+            const q = query.toLowerCase();
+            const filtered = musicLibrary.filter(t => 
+                t.title.toLowerCase().includes(q) || 
+                t.artist.toLowerCase().includes(q) || 
+                t.genre.toLowerCase().includes(q)
+            );
+            renderLibrary(filtered);
+        }
+
+        function handleAddNewTrack(event) {
+            event.preventDefault();
+            const title = document.getElementById('newTitle').value;
+            const artist = document.getElementById('newArtist').value;
+            const genre = document.getElementById('newGenre').value;
+            const duration = parseInt(document.getElementById('newDuration').value);
+            const artKeyword = document.getElementById('newArtKeyword').value;
+
+            const newTrack = {
+                id: musicLibrary.length > 0 ? Math.max(...musicLibrary.map(t => t.id)) + 1 : 1,
+                title,
+                artist,
+                genre,
+                duration,
+                artKeyword
+            };
+
+            musicLibrary.push(newTrack);
+            renderLibrary();
+            closeModal('addTrackModal');
+            document.getElementById('addTrackForm').reset();
+            
+            showToast("Track Added", `Successfully added "${title}" to library (.push()).`, "fa-circle-plus");
+        }
+
+        function openModal(id) {
+            document.getElementById(id).classList.remove('hidden');
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.add('hidden');
+        }
+
+        function updateStats() {
+            document.getElementById('statPointer').textContent = currentIndex;
+            document.getElementById('statQueueLen').textContent = playbackQueue.length;
+            document.getElementById('statLastAction').textContent = lastActionLog;
+        }
+
+        function formatTime(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+        }
+
+        function showToast(title, message, iconClass) {
+            const toast = document.getElementById('toastNotification');
+            document.getElementById('toastTitle').textContent = title;
+            document.getElementById('toastMessage').textContent = message;
+            document.getElementById('toastIcon').innerHTML = `<i class="fa-solid ${iconClass}"></i>`;
+
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            setTimeout(() => {
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 3500);
+        }
+    </script>
+</body>
+</html>
